@@ -6,13 +6,8 @@ class SimilarityTransformDist:
     """
     Computes the Similarity Transform for Matrix Comparison under Orthogonal Groups (O(n) or SO(n))
     """
-    def __init__(self, 
-                 iters=200,
-                 score_method: str = "angular",
-                 device: str = 'cpu',
-                 verbose=False,
-                 group: str = "O(n)",
-                 lambda_reg: float = 0.01):
+    def __init__(self, iters=200, score_method='angular', device='cpu', verbose=False, group='O(n)', lambda_reg=0.01):
+
         """
         Parameters
         ----------

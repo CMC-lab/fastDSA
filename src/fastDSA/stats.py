@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from .dmd import DMD
 from .simdist import SimilarityTransformDist
-from .dsa import DSA
+from .fastDSA import fastDSA
 import warnings
 
 def torch_convert(x):
