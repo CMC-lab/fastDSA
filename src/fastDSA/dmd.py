@@ -164,12 +164,7 @@ class DMD:
             self.n = self.data.shape[1]
             self.ntrials = 1
         
-    def compute_hankel(
-            self,
-            data=None,
-            n_delays=None,
-            delay_interval=None,
-        ):
+    def compute_hankel(self, data, n_delays, delay_interval):
         """
         Computes the Hankel matrix from the provided data.
 
@@ -196,16 +191,33 @@ class DMD:
         if self.verbose:
             print("Computing Hankel matrix ...")
 
-        # if parameters are provided, overwrite them from the init
-        self.data = self.data if data is None else self._init_data(data)
+        # # if parameters are provided, overwrite them from the init
+        # self.data = self.data if data is None else self._init_data(data)
+        # self.n_delays = self.n_delays if n_delays is None else n_delays
+        # self.delay_interval = self.delay_interval if delay_interval is None else delay_interval
+        # self.data = self.data.to(self.device)
         self.n_delays = self.n_delays if n_delays is None else n_delays
         self.delay_interval = self.delay_interval if delay_interval is None else delay_interval
+
+        # FIX: accept `data` argument and store it
+        if data is not None:
+            self.data = data
+
+        if self.data is None:
+            raise ValueError("DMD has no data. Pass `data` to fit()/compute_hankel() or set `self.data` first.")
+
+        # Ensure torch tensor on the right device
+        if not isinstance(self.data, torch.Tensor):
+            self.data = torch.as_tensor(self.data, dtype=torch.float32)
+
         self.data = self.data.to(self.device)
 
         self.H = embed_signal_torch(self.data, self.n_delays, self.delay_interval)
 
-        if self.verbose:
-            print("Hankel matrix computed!")
+
+
+            # if self.verbose:
+            #     print("Hankel matrix computed!")
     
     def compute_svd(self):
         """
