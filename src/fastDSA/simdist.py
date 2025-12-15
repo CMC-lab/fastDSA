@@ -183,30 +183,16 @@ def compute_dmd_matrix_for_traj(
     n_delays: int,
     delay_interval: int,
     desired_rank: int,
-    device: str = "cuda",
+    device: str,
     steps_ahead: int = 1,
-):
+) -> Tuple[torch.Tensor, int]:
     """
-    Compute the HAVOK-DMD operator matrix for a single trajectory.
+    Returns:
+      A_op: torch.Tensor on `device`
+      used_rank: int
 
-    Parameters
-    ----------
-    traj : np.ndarray
-        2D array of shape (T, n) on CPU.
-    n_delays : int
-    delay_interval : int
-    desired_rank : int
-        Global desired rank (will be capped per-trajectory by _safe_rank_for_traj).
-    device : str
-        'cuda' or 'cpu'.
-    steps_ahead : int
-
-    Returns
-    -------
-    A : torch.Tensor
-        DMD operator (H_dims x H_dims) on `device`.
-    rank : int
-        Rank actually used for this trajectory.
+    This wrapper is compatible with the current DMD implementation which
+    expects `self.data` (torch.Tensor) to be set before compute_hankel().
     """
     if isinstance(traj, np.ndarray) and traj.dtype != np.float32:
         traj = traj.astype(np.float32)
@@ -214,13 +200,16 @@ def compute_dmd_matrix_for_traj(
     if device.startswith("cuda") and not torch.cuda.is_available():
         device = "cpu"
 
-    rank = _safe_rank_for_traj(traj, n_delays, delay_interval, desired_rank, steps_ahead)
+    used_rank = _safe_rank_for_traj(traj, n_delays, delay_interval, desired_rank, steps_ahead)
+
+    # IMPORTANT: your DMD expects torch tensor stored in self.data
+    traj_t = torch.as_tensor(traj, dtype=torch.float32, device=device)
 
     dmd = DMD(
-        traj,
+        traj_t,  # pass tensor, not numpy
         n_delays=n_delays,
         delay_interval=delay_interval,
-        rank=None,                 # set via fit() to be explicit
+        rank=None,
         reduced_rank_reg=False,
         lamb=0.0,
         device=device,
@@ -229,16 +218,23 @@ def compute_dmd_matrix_for_traj(
         steps_ahead=steps_ahead,
     )
 
+    # Also ensure attribute exists even if __init__ doesn't set it
+    dmd.data = traj_t
+
+    # Many DMD implementations ignore the passed `data` and rely on self.data,
+    # but we pass it anyway for compatibility.
     dmd.fit(
-        data=traj,
+        data=traj_t,
         n_delays=n_delays,
         delay_interval=delay_interval,
-        rank=rank,
+        rank=used_rank,
         device=device,
     )
 
-    A = dmd.A_havok_dmd  # torch.Tensor on `device`
-    return A, rank
+    # Your code uses A_havok_dmd as the operator
+    A = dmd.A_havok_dmd
+    return A, used_rank
+
 
 
 def _aggregate_operators(ops: Sequence[torch.Tensor]) -> torch.Tensor:
