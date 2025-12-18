@@ -14,43 +14,41 @@ setup(
     url="https://github.com/CMC-lab/fastDSA",
     author="CMC lab",
     author_email="",
-    license="MIT",  # adjust if your LICENSE differs
+    license="MIT",  # adjust if needed
     python_requires=">=3.9",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     include_package_data=True,
     install_requires=[
+        # core
         "numpy>=1.24.0",
         "torch>=1.3.0",
-        "pot",                 # provides `ot`
-        "scikit-learn>=1.0.0", # RegularizationTerm uses sklearn (e.g., TruncatedSVD)
-        "tqdm>=4.0.0",         # used for progress bars (LandingAlgorithm)
+
+        # optimal transport (imported as `ot`)
+        "pot>=0.9.0",
+
+        # used in RegularizationTerm (e.g., TruncatedSVD)
+        "scikit-learn>=1.0.0",
+
+        # progress bars (LandingAlgorithm)
+        "tqdm>=4.0.0",
+
+        # required by RiemannianManifold (method='rim')
+        "geoopt>=0.5.0",
+
+        # required by kwDSA path (method='kw')
+        "kooplearn>=1.1.0",
+
+        # practical runtime dependency (POT depends on SciPy anyway, but make it explicit)
+        "scipy>=1.6.0",
     ],
     extras_require={
-        # Riemannian manifold backend (method="rim")
-        "rim": [
-            "geoopt>=0.5.0",
-        ],
-        # Kernel-Wasserstein backend (method="kw")
-        "kw": [
-            "kooplearn>=1.1.0",
-        ],
-        # Notebook/tutorial conveniences (ODE generation, plotting, MDS, etc.)
-        "tutorial": [
-            "scipy>=1.8.0",
-            "matplotlib>=3.5.0",
-        ],
-        # Developer / test dependencies
         "dev": [
             "pytest>=7.0",
         ],
-        # One-shot install for all optional features
-        "all": [
-            "geoopt>=0.5.0",
-            "kooplearn>=1.1.0",
-            "scipy>=1.8.0",
+        # Optional notebook conveniences (not required for the library itself)
+        "tutorial": [
             "matplotlib>=3.5.0",
-            "pytest>=7.0",
         ],
     },
     classifiers=[
