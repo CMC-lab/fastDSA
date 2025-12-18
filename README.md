@@ -75,6 +75,7 @@ The package supports multiple similarity backends via the `method` argument in `
 `"land"`: Landing-style optimization-based distance
 
 `"kw"`: Kernel-based Wasserstein distance (kernel DMD)
-[MethodsSchematic](https://github.com/CMC-lab/fastDSA/blob/main/Tests/Figures/Methods_schematic.jpg)
+
+![MethodsSchematic](https://github.com/CMC-lab/fastDSA/blob/main/Tests/Figures/Methods_schematic.png)
 
 For methodological details and guidance on choosing among these options, please refer to the paper.
