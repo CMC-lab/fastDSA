@@ -13,9 +13,9 @@ fastDSA is designed to be computationally more efficient than prior dynamical si
 
 We demonstrate that fastDSA is at least an order of magnitude faster than previous methods while preserving invariances and sensitivities relevant to dynamical similarity analysis.
 
----
 
-## Citation
+
+### Citation
 
 If you use this code, please cite:
 
@@ -27,8 +27,23 @@ If you use this code, please cite:
   year={2025}
 }
 ```
----
-### Quick Start
+
+
+## Installation
+
+Clone the repository and install in editable mode:
+
+```
+git clone https://github.com/CMC-lab/fastDSA.git
+cd fastDSA
+pip install -e .
+```
+
+
+
+
+## Quick Start
+
 Data format
 
 fastDSA expects each trajectory/trial in the shape:
@@ -65,7 +80,9 @@ For a more detailed tutorial—including applying fastDSA to data shaped `(trial
 
 https://github.com/CMC-lab/fastDSA/blob/main/Tutorial/Tutorial1.ipynb
 
+
 **fastDSA uses PyTorch and supports CUDA acceleration. For large datasets, using a CUDA-enabled GPU is strongly recommended.**
+
 The package supports multiple similarity backends via the `method` argument in `SimDistConfig`:
 
 `"ro"`: RegularizationTerm-based similarity transform distance
