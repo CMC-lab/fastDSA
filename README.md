@@ -4,6 +4,8 @@ Fast Dynamical Similarity Analysis (**fastDSA**) is the reference implementation
 
 https://www.arxiv.org/abs/2511.22828
 
+![MethodsSchematic](https://github.com/CMC-lab/fastDSA/blob/main/Tests/Figures/Methods_schematic.png)
+
 To understand how neural systems process information, it is often essential to compare one circuit with another, one brain with another, or data with a model. Traditional similarity measures ignore the dynamical processes underlying neural representations. Dynamical similarity methods offer a framework to compare the temporal structure of dynamical systems by embedding their (possibly) nonlinear dynamics into a globally linear space and computing conjugacy metrics on the resulting linear operators. However, identifying the best embedding and computing these metrics can be computationally slow.
 
 fastDSA is designed to be computationally more efficient than prior dynamical similarity methods while maintaining accuracy and robustness. It introduces two key components that boost efficiency:
@@ -93,6 +95,5 @@ The package supports multiple similarity backends via the `method` argument in `
 
 `"kw"`: Kernel-based Wasserstein distance (kernel DMD)
 
-![MethodsSchematic](https://github.com/CMC-lab/fastDSA/blob/main/Tests/Figures/Methods_schematic.png)
 
 For methodological details and guidance on choosing among these options, please refer to the paper.
