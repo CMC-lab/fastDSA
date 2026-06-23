@@ -801,30 +801,99 @@ def select_q_star_for_collection(
         r_nested.append(r_row)
         delay_nested.append(delay_row)
 
+    # ------------------------------------------------------------------
+    # Shared-q handling
+    # ------------------------------------------------------------------
+    # Important for fastDSA/simdist:
+    # When operators are compared or averaged, all trajectories must use one
+    # common Hankel dimension. That common q must be feasible for *every*
+    # trajectory. Therefore a collection-level shared q is not allowed to
+    # exceed the shortest trajectory's geometric Hankel cap.
+    #
+    # If q is clipped to a common value, the SVHT rank must also be evaluated
+    # at that common q, not inherited from a larger per-trajectory q_star.
     if shared_q:
         all_q = [int(row["q_star"]) for row in selected_rows]
+        all_q_geom = [int(row["q_geom"]) for row in selected_rows]
+        # Feasibility for the actual delay_embed_traj convention used later:
+        # L = T - (q - 1) * delay_interval must be > 1.
+        all_q_pair_feasible = [
+            max(1, ((int(row["N"]) - 2) // max(int(delay_interval), 1)) + 1)
+            for row in selected_rows
+        ]
+
         strategy = str(shared_q_strategy).lower()
         if strategy == "max":
-            q_global = int(max(all_q))
+            q_candidate = int(max(all_q))
         elif strategy == "min":
-            q_global = int(min(all_q))
+            q_candidate = int(min(all_q))
         elif strategy == "median":
-            q_global = _median_int(all_q)
+            q_candidate = _median_int(all_q)
         else:
             raise ValueError("shared_q_strategy must be 'median', 'max', or 'min'")
+
+        q_feasible_global = int(min(min(all_q_geom), min(all_q_pair_feasible)))
+        q_global = int(min(q_candidate, q_feasible_global))
+        q_global_was_clipped = bool(q_global < q_candidate)
+
+        # Recompute SVHT rank at the actual shared q for every trajectory.
+        shared_rank_rows: List[Dict[str, Any]] = []
+        shared_ranks: List[int] = []
+
+        for i, dat in enumerate(data):
+            for j, X in enumerate(dat):
+                sig = representative_signal(X, time_axis=time_axis)
+                eval_shared = evaluate_hankel_svht(
+                    sig,
+                    q=q_global,
+                    min_rank=int(min_rank),
+                    max_rank_cap=max_rank_cap,
+                )
+                row = {
+                    "stage": "shared_q_rank_eval",
+                    "data_block": int(i),
+                    "data_index": int(j),
+                    "q_shared": int(q_global),
+                    "q_candidate_before_feasibility_clip": int(q_candidate),
+                    "q_feasible_global": int(q_feasible_global),
+                    "q_global_was_clipped": bool(q_global_was_clipped),
+                    "r_at_shared_q": int(eval_shared["r"]),
+                    "SVHT_threshold_at_shared_q": float(eval_shared["SVHT_threshold"]),
+                    "energy_retained_at_shared_q": float(eval_shared["energy_retained"]),
+                    "embedded_rows_at_shared_q": int(eval_shared["embedded_rows"]),
+                    "embedded_cols_at_shared_q": int(eval_shared["embedded_cols"]),
+                }
+                shared_rank_rows.append(row)
+                diagnostic_rows.append(row.copy())
+                shared_ranks.append(int(eval_shared["r"]))
+
         q_nested = [[q_global for _ in row] for row in q_nested]
+
+        r_strategy = str(rank_strategy).lower()
+        if r_strategy == "max":
+            r_global = int(max(shared_ranks))
+        elif r_strategy == "median":
+            r_global = _median_int(shared_ranks)
+        else:
+            raise ValueError("rank_strategy must be 'max' or 'median'")
+
+        r_nested = [[r_global for _ in row] for row in r_nested]
+
     else:
         q_global = None
+        q_feasible_global = None
+        q_candidate = None
+        q_global_was_clipped = False
 
-    all_r = [int(row["r_star"]) for row in selected_rows]
-    r_strategy = str(rank_strategy).lower()
-    if r_strategy == "max":
-        r_global = int(max(all_r))
-    elif r_strategy == "median":
-        r_global = _median_int(all_r)
-    else:
-        raise ValueError("rank_strategy must be 'max' or 'median'")
-    r_nested = [[r_global for _ in row] for row in r_nested]
+        all_r = [int(row["r_star"]) for row in selected_rows]
+        r_strategy = str(rank_strategy).lower()
+        if r_strategy == "max":
+            r_global = int(max(all_r))
+        elif r_strategy == "median":
+            r_global = _median_int(all_r)
+        else:
+            raise ValueError("rank_strategy must be 'max' or 'median'")
+        r_nested = [[r_global for _ in row] for row in r_nested]
 
     return {
         "n_delays": q_nested,
@@ -832,6 +901,9 @@ def select_q_star_for_collection(
         "rank": r_nested,
         "q_global": q_global,
         "rank_global": r_global,
+        "q_feasible_global": q_feasible_global,
+        "q_candidate_before_feasibility_clip": q_candidate,
+        "q_global_was_clipped": q_global_was_clipped,
         "selected_rows": selected_rows,
         "diagnostic_rows": diagnostic_rows,
     }

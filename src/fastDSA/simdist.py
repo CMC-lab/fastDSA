@@ -326,7 +326,7 @@ class SimDistConfig:
     q_min_svht_rank: int = 1
     q_max_rank_cap: Optional[int] = None
     q_shared: bool = True
-    q_shared_strategy: SharedQStrategy = "median"
+    q_shared_strategy: SharedQStrategy = "min"
     q_rank_strategy: RankStrategy = "max"
     q_time_axis: Optional[int] = 0  # trajs are converted to (T, channels)
 
@@ -560,6 +560,27 @@ class FastDSASimilarity:
         # select_q_star_for_collection returns shared values by default.
         n_delays = int(q_nested[0][0])
         q_star_rank = int(r_nested[0][0])
+
+        # Final safety guard: a shared q must be feasible for every trajectory.
+        # This should already be enforced inside q_star.py, but keeping the
+        # check here prevents impossible Hankel matrices if an older q_star.py
+        # is accidentally imported.
+        all_trajs = list(trajs_A) + list(trajs_B)
+        q_feasible_by_traj = [
+            max(1, ((int(tr.shape[0]) - 2) // delay_interval) + 1)
+            for tr in all_trajs
+        ]
+        q_feasible_global = int(min(q_feasible_by_traj))
+        if n_delays > q_feasible_global:
+            if self.config.verbose:
+                print(
+                    f"[fastDSA] q_star={n_delays} is infeasible for the shortest "
+                    f"trajectory; clipping to {q_feasible_global}."
+                )
+            n_delays = q_feasible_global
+            # Rank will be capped after Hankel construction; avoid trusting a
+            # rank estimated at an infeasible/larger q.
+            q_star_rank = None
 
         self.used_q_star_ = True
         self.selected_n_delays_ = n_delays
