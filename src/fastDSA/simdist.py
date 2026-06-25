@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Literal, Optional, Sequence, Tuple, Union, Any, List
 
 import numpy as np
@@ -358,6 +359,11 @@ class SimDistConfig:
 
     # Kernel-Wasserstein-specific
     kw_use_sv: bool = False  # if True, you could extend kw to use singular values
+    kw_num_centers: Union[int, float] = 0.1
+    kw_gamma: float = 1.0
+    kw_alpha: float = 1e-10
+    kw_random_state: int = 0
+    kw_eigen_solver: str = "arpack"
 
     # Misc
     device: str = "cuda"
@@ -399,6 +405,7 @@ class FastDSASimilarity:
         self.q_star_result_: Optional[dict] = None
         self.hankel_selection_table_: Optional[Sequence[dict]] = None
         self.hankel_diagnostics_table_: Optional[Sequence[dict]] = None
+        self._kw_spectrum_cache = {}
 
     # -------------------- public API -------------------- #
 
@@ -759,6 +766,11 @@ class FastDSASimilarity:
             n_delays=n_delays,
             rank=local_rank,
             delay_interval=delay_interval,
+            n_centers=self.config.kw_num_centers,
+            gamma=self.config.kw_gamma,
+            alpha=self.config.kw_alpha,
+            random_state=self.config.kw_random_state,
+            eigen_solver=self.config.kw_eigen_solver,
         )
 
         if isinstance(op, torch.Tensor):
@@ -772,6 +784,34 @@ class FastDSASimilarity:
             )
 
         return op
+
+    def _kw_spectrum_cache_key(
+        self,
+        traj: np.ndarray,
+        n_delays: int,
+        delay_interval: int,
+        global_rank: int,
+    ) -> tuple:
+        """Content-based cache key for one trial's kwDSA spectrum."""
+        traj = np.ascontiguousarray(traj)
+        digest = hashlib.blake2b(
+            traj.view(np.uint8),
+            digest_size=16,
+        ).digest()
+        return (
+            traj.shape,
+            traj.dtype.str,
+            digest,
+            int(n_delays),
+            int(delay_interval),
+            int(global_rank),
+            bool(self.config.kw_use_sv),
+            self.config.kw_num_centers,
+            float(self.config.kw_gamma),
+            float(self.config.kw_alpha),
+            int(self.config.kw_random_state),
+            str(self.config.kw_eigen_solver),
+        )
 
     def _kw_spectrum_for_trajs(
         self,
@@ -792,24 +832,37 @@ class FastDSASimilarity:
 
         vals_all = []
         for idx, traj in enumerate(trajs):
-            op = self._fit_kw_operator_for_traj(
+            cache_key = self._kw_spectrum_cache_key(
                 traj,
                 n_delays=n_delays,
                 delay_interval=delay_interval,
                 global_rank=global_rank,
             )
+            vals = self._kw_spectrum_cache.get(cache_key)
 
-            if bool(self.config.kw_use_sv):
-                vals = np.linalg.svd(op, compute_uv=False)
-            else:
-                vals = np.linalg.eigvals(op)
+            if vals is None:
+                op = self._fit_kw_operator_for_traj(
+                    traj,
+                    n_delays=n_delays,
+                    delay_interval=delay_interval,
+                    global_rank=global_rank,
+                )
 
-            vals = np.asarray(vals).reshape(-1)
-            finite = np.isfinite(vals.real) & np.isfinite(vals.imag)
-            vals = vals[finite]
+                if bool(self.config.kw_use_sv):
+                    vals = np.linalg.svd(op, compute_uv=False)
+                else:
+                    vals = np.linalg.eigvals(op)
 
-            if vals.size == 0:
-                raise ValueError(f"kwDSA produced no finite spectral values for trajectory index {idx}.")
+                vals = np.asarray(vals).reshape(-1)
+                finite = np.isfinite(vals.real) & np.isfinite(vals.imag)
+                vals = vals[finite]
+
+                if vals.size == 0:
+                    raise ValueError(
+                        "kwDSA produced no finite spectral values for "
+                        f"trajectory index {idx}."
+                    )
+                self._kw_spectrum_cache[cache_key] = vals
 
             vals_all.append(vals)
 

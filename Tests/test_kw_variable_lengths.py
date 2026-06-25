@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -94,6 +95,37 @@ class KwVariableLengthTests(unittest.TestCase):
 
         self.assertTrue(np.isfinite(score))
         self.assertGreater(score, 0.0)
+
+    def test_reused_similarity_caches_one_spectrum_per_trial(self):
+        trials = [
+            _trajectory(80, phase=0.0).T,
+            _trajectory(85, phase=0.2).T,
+            _trajectory(90, phase=0.4).T,
+            _trajectory(95, phase=0.6).T,
+        ]
+        similarity = FastDSASimilarity(
+            SimDistConfig(
+                n_delays=3,
+                delay_interval=1,
+                rank=2,
+                method="kw",
+                device="cpu",
+                kw_num_centers=0.1,
+            )
+        )
+
+        from fastDSA import simdist
+
+        with patch.object(
+            simdist,
+            "fit_kernel_dmd",
+            wraps=simdist.fit_kernel_dmd,
+        ) as fit_mock:
+            for i in range(len(trials)):
+                for j in range(i + 1, len(trials)):
+                    similarity.fit_score([trials[i]], [trials[j]])
+
+        self.assertEqual(fit_mock.call_count, len(trials))
 
 
 if __name__ == "__main__":

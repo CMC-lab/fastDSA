@@ -74,8 +74,8 @@ class KernelDMD(_NystroemModel):
         rank: int = 10,
         verbose: bool = False,
         gamma: float = 1.0,
-        alpha: float = 1e-7,
-        n_centers: int | float = 600,
+        alpha: float = 1e-10,
+        n_centers: int | float = 0.1,
         random_state: int = 0,
         reduced_rank: bool = True,
         eigen_solver: str = "arpack",
@@ -317,13 +317,34 @@ def fit_kernel_dmd(x, n_delays: int, rank: int, delay_interval: int = 1, **kwarg
     # number of available contexts.
     n_contexts = _num_available_contexts(x, n_delays=n_delays, delay_interval=delay_interval)
     rank = int(max(1, min(int(rank), int(n_contexts))))
-    n_centers = int(max(rank, min(600, n_contexts)))
-    kwargs.setdefault("n_centers", n_centers)
+    arnoldi_buffer = max(10, 4 * int(np.sqrt(rank)))
+    minimum_stable_centers = min(
+        n_contexts,
+        rank + arnoldi_buffer + 1,
+    )
+
+    requested_centers = kwargs.pop("n_centers", 0.1)
+    if requested_centers < 1:
+        # kooplearn 1.1 rounds fractional center counts down. Use the same
+        # conservative count for both supported API generations.
+        effective_centers = max(1, int(float(requested_centers) * n_contexts))
+        if effective_centers < minimum_stable_centers:
+            n_centers = minimum_stable_centers
+        else:
+            n_centers = float(requested_centers)
+    else:
+        n_centers = int(min(int(requested_centers), n_contexts))
+        n_centers = max(minimum_stable_centers, n_centers)
+    kwargs["n_centers"] = n_centers
 
     # kooplearn's Arnoldi implementation needs room above the requested rank.
-    arnoldi_buffer = max(10, 4 * int(np.sqrt(rank)))
-    if n_centers <= rank + arnoldi_buffer + 1:
-        kwargs.setdefault("eigen_solver", "full")
+    effective_centers = (
+        max(1, int(n_centers * n_contexts))
+        if n_centers < 1
+        else int(n_centers)
+    )
+    if effective_centers <= rank + arnoldi_buffer + 1:
+        kwargs["eigen_solver"] = "full"
 
     dmd = KernelDMD(
         x,
