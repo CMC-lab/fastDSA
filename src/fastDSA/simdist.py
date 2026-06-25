@@ -728,21 +728,100 @@ class FastDSASimilarity:
 
     # -------------------- kwDSA path (kernel Wasserstein) -------------------- #
 
-    def _to_trajs_3d_for_kw_from_list(self, trajs: Sequence[np.ndarray]) -> np.ndarray:
-        """Stack list[(T, C)] into (n_traj, T, C) for KernelDMD."""
+    def _fit_kw_operator_for_traj(
+        self,
+        traj: np.ndarray,
+        n_delays: int,
+        delay_interval: int,
+        global_rank: int,
+    ) -> np.ndarray:
+        """
+        Fit KernelDMD for one trajectory and return a 2D operator matrix.
+
+        Important: this keeps the kw path compatible with variable-length
+        trajectories. We do NOT stack trajectories into one 3D array, because
+        that incorrectly assumes every trial has the same number of timepoints.
+        """
+        traj = np.asarray(traj, dtype=np.float32)
+        if traj.ndim != 2:
+            raise ValueError(f"kwDSA expects each trajectory as 2D (T, C); got {traj.shape}")
+
+        local_rank = _safe_rank_for_traj(
+            traj,
+            n_delays=n_delays,
+            delay_interval=delay_interval,
+            desired_rank=global_rank,
+            steps_ahead=self.config.steps_ahead,
+        )
+
+        op = fit_kernel_dmd(
+            traj,
+            n_delays=n_delays,
+            rank=local_rank,
+            delay_interval=delay_interval,
+        )
+
+        if isinstance(op, torch.Tensor):
+            op = op.detach().cpu().numpy()
+        op = np.asarray(op)
+
+        if op.ndim != 2 or op.shape[0] != op.shape[1]:
+            raise ValueError(
+                "KernelDMD must return a square 2D operator matrix for kwDSA. "
+                f"Got shape {op.shape}."
+            )
+
+        return op
+
+    def _kw_spectrum_for_trajs(
+        self,
+        trajs: Sequence[np.ndarray],
+        n_delays: int,
+        delay_interval: int,
+        global_rank: int,
+    ) -> np.ndarray:
+        """
+        Fit one KernelDMD model per trajectory and collect its spectrum.
+
+        For method='kw', the distance is between spectral clouds. This is the
+        correct variable-length generalization: each trial contributes its
+        eigenvalue distribution without requiring artificial padding/truncation.
+        """
         if len(trajs) == 0:
             raise ValueError("No trajectories supplied for kwDSA.")
-        shapes = {tuple(t.shape) for t in trajs}
-        if len(shapes) != 1:
-            raise ValueError(
-                "kwDSA path requires all trajectories in a dataset to have the same shape. "
-                f"Shapes found: {sorted(shapes)}"
+
+        vals_all = []
+        for idx, traj in enumerate(trajs):
+            op = self._fit_kw_operator_for_traj(
+                traj,
+                n_delays=n_delays,
+                delay_interval=delay_interval,
+                global_rank=global_rank,
             )
-        return np.stack(trajs, axis=0)
+
+            if bool(self.config.kw_use_sv):
+                vals = np.linalg.svd(op, compute_uv=False)
+            else:
+                vals = np.linalg.eigvals(op)
+
+            vals = np.asarray(vals).reshape(-1)
+            finite = np.isfinite(vals.real) & np.isfinite(vals.imag)
+            vals = vals[finite]
+
+            if vals.size == 0:
+                raise ValueError(f"kwDSA produced no finite spectral values for trajectory index {idx}.")
+
+            vals_all.append(vals)
+
+        return np.concatenate(vals_all, axis=0)
 
     def _fit_score_kw(self, data_A: ArrayLike, data_B: ArrayLike) -> Tuple[float, int]:
         """
-        Kernel-DMD + Wasserstein distance between eigenvalue distributions.
+        Kernel-DMD + Wasserstein distance between spectral distributions.
+
+        This implementation supports variable-length trajectories by fitting
+        KernelDMD separately to each trajectory and comparing the pooled spectral
+        clouds from dataset A and dataset B.
         """
         trajs_A = self._prepare_trajs_list(data_A)
         trajs_B = self._prepare_trajs_list(data_B)
@@ -750,7 +829,7 @@ class FastDSASimilarity:
 
         n_delays, delay_interval, q_star_rank = self._resolve_embedding_params(trajs_A, trajs_B)
 
-        # Detect rank if needed using the selected q.
+        # Detect rank if needed using all trajectories, not only the first one.
         if self.config.rank is not None:
             global_rank = int(self.config.rank)
         elif q_star_rank is not None:
@@ -758,12 +837,13 @@ class FastDSASimilarity:
             if self.config.verbose:
                 print(f"[fastDSA-kw] Using q_star SVHT rank: {global_rank}")
         else:
-            pairs_A = self._build_pairs([trajs_A[0]], n_delays, delay_interval)
-            pairs_B = self._build_pairs([trajs_B[0]], n_delays, delay_interval)
+            pairs_A = self._build_pairs(trajs_A, n_delays, delay_interval)
+            pairs_B = self._build_pairs(trajs_B, n_delays, delay_interval)
             global_rank = self._auto_detect_rank(pairs_A, pairs_B)
             if self.config.verbose:
                 print(f"[fastDSA-kw] Detected rank via SVHT: {global_rank}")
 
+        # Use one shared rank so every trial contributes spectra of comparable size.
         global_rank = _cap_global_rank_for_trajs(
             all_trajs,
             n_delays=n_delays,
@@ -775,25 +855,18 @@ class FastDSASimilarity:
         if self.config.verbose:
             print(f"[fastDSA-kw] Using n_delays={n_delays}, delay_interval={delay_interval}, rank={global_rank}")
 
-        trajs_A_3d = self._to_trajs_3d_for_kw_from_list(trajs_A)
-        trajs_B_3d = self._to_trajs_3d_for_kw_from_list(trajs_B)
-
-        # Fit kernel DMD for both datasets.
-        kernel_A = fit_kernel_dmd(
-            trajs_A_3d,
-            n_delays,
-            global_rank,
+        spectrum_A = self._kw_spectrum_for_trajs(
+            trajs_A,
+            n_delays=n_delays,
             delay_interval=delay_interval,
+            global_rank=global_rank,
         )
-        kernel_B = fit_kernel_dmd(
-            trajs_B_3d,
-            n_delays,
-            global_rank,
+        spectrum_B = self._kw_spectrum_for_trajs(
+            trajs_B,
+            n_delays=n_delays,
             delay_interval=delay_interval,
+            global_rank=global_rank,
         )
 
-        eigvals_A = np.linalg.eigvals(kernel_A)
-        eigvals_B = np.linalg.eigvals(kernel_B)
-
-        score = compute_kw_wasserstein_distance(eigvals_A, eigvals_B)
+        score = compute_kw_wasserstein_distance(spectrum_A, spectrum_B)
         return float(score), int(global_rank)

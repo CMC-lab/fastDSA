@@ -27,18 +27,41 @@ except Exception:
         _SUPPORTS_KERNEL_OBJECT = False
 
 
+def _as_real_point_cloud(x) -> np.ndarray:
+    """Convert real values or complex eigenvalues to a finite real point cloud."""
+    if isinstance(x, torch.Tensor):
+        x = x.detach().cpu().numpy()
+
+    x = np.asarray(x).reshape(-1)
+
+    if np.iscomplexobj(x):
+        pts = np.column_stack([x.real, x.imag])
+    else:
+        pts = x.astype(float, copy=False).reshape(-1, 1)
+
+    finite = np.isfinite(pts).all(axis=1)
+    pts = pts[finite]
+
+    if pts.shape[0] == 0:
+        raise ValueError("Cannot compute Wasserstein distance: no finite spectral values were provided.")
+
+    return pts.astype(float, copy=False)
+
+
 def compute_wasserstein_distance(a, b) -> float:
-    if isinstance(a, torch.Tensor):
-        a = a.detach().cpu().numpy()
-    if isinstance(b, torch.Tensor):
-        b = b.detach().cpu().numpy()
+    """
+    Wasserstein distance between spectral point clouds.
 
-    a = np.asarray(a).reshape(-1, 1)
-    b = np.asarray(b).reshape(-1, 1)
+    Real spectra are treated as 1D points. Complex eigenvalues are treated as
+    2D points (real part, imaginary part), which avoids invalid complex-valued
+    ground-cost matrices in POT.
+    """
+    a = _as_real_point_cloud(a)
+    b = _as_real_point_cloud(b)
 
-    M = ot.dist(a, b)
-    aw = np.ones(a.shape[0]) / a.shape[0]
-    bw = np.ones(b.shape[0]) / b.shape[0]
+    M = ot.dist(a, b, metric="euclidean")
+    aw = np.ones(a.shape[0], dtype=float) / a.shape[0]
+    bw = np.ones(b.shape[0], dtype=float) / b.shape[0]
     return float(ot.emd2(aw, bw, M))
 
 
@@ -106,7 +129,26 @@ class KernelDMD(_NystroemModel):
         return super().fit(data, **kwargs)
 
 
+def _num_available_contexts(x, n_delays: int, delay_interval: int) -> int:
+    """Conservative count of usable transition/context rows."""
+    x = np.asarray(x)
+    if x.ndim == 2:
+        T = x.shape[0]
+        return max(1, T - (int(n_delays) - 1) * int(delay_interval) - 1)
+    if x.ndim == 3:
+        T = x.shape[1]
+        return max(1, x.shape[0] * (T - (int(n_delays) - 1) * int(delay_interval) - 1))
+    return max(1, x.shape[0] - 1)
+
+
 def fit_kernel_dmd(x, n_delays: int, rank: int, delay_interval: int = 1, **kwargs):
+    # Keep kooplearn's randomized Nyström model in a feasible regime for short
+    # trajectories. This prevents n_centers/n_components from exceeding the
+    # number of available contexts.
+    n_contexts = _num_available_contexts(x, n_delays=n_delays, delay_interval=delay_interval)
+    rank = int(max(1, min(int(rank), int(n_contexts))))
+    kwargs.setdefault("n_centers", int(max(rank, min(600, n_contexts))))
+
     dmd = KernelDMD(
         x,
         n_delays=n_delays,
