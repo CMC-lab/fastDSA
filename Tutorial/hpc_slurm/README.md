@@ -7,7 +7,7 @@ Files:
 - `run_fastdsa_slurm.py`: Python entrypoint used by the Slurm job.
 - `submit_fastdsa.sbatch`: editable Slurm submission script.
 
-The Slurm entrypoint reuses the local runner in `Tutorial/single_py/run_fastdsa_single.py`, so all command-line options are the same.
+The Slurm entrypoint reuses the local runner in `Tutorial/single_py/run_fastdsa_single.py`, with one HPC-specific setting: the automatic setup stage uses `selection_iters=1`.
 
 ## Data Format
 
@@ -76,7 +76,7 @@ conda activate fastdsa
 The batch script reads environment variables so you can change common settings without editing the file:
 
 ```bash
-METHOD=kw DEVICE=cuda ITERS=200 SELECTION_ITERS=50 \
+METHOD=kw DEVICE=cuda ITERS=200 \
 sbatch Tutorial/hpc_slurm/submit_fastdsa.sbatch /path/to/A /path/to/B /path/to/out
 ```
 
@@ -86,7 +86,6 @@ Available environment variables:
 - `METHOD`: fastDSA backend, one of `ro`, `rim`, `land`, or `kw`.
 - `DEVICE`: `cuda`, `cuda:0`, `cpu`, or `auto`.
 - `ITERS`: pairwise optimization iterations.
-- `SELECTION_ITERS`: cheaper setup iterations for automatic q-star/SVHT selection.
 - `INPUT_SHAPE`: `time_features` or `channels_time`.
 
 ## Plotting Options

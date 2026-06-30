@@ -33,7 +33,7 @@ Use this command to run the built-in two-system synthetic example and save both 
 ```bash
 python Tutorial/single_py/run_fastdsa_single.py \
   --synthetic \
-  --method kw \
+  --method land \
   --output-dir Tutorial/single_py/results_synthetic \
   --plot-heatmap \
   --plot-mds
@@ -60,7 +60,7 @@ python Tutorial/single_py/run_fastdsa_single.py \
 - `--rank`: manual DMD rank. Omit this to use SVHT rank selection.
 - `--device`: use `auto`, `cpu`, `cuda`, or a specific CUDA device such as `cuda:0`.
 - `--iters`: optimization iterations for pairwise distance computation.
-- `--selection-iters`: cheaper iterations used during automatic setup.
+
 
 ## Plotting Options
 

@@ -91,7 +91,7 @@ def select_embedding_and_rank(dataset_a, dataset_b, args):
         delay_interval=args.delay_interval,
         rank=args.rank,
         method=args.method,
-        iters=args.selection_iters,
+        iters=1,  # cheap selection/probe run
         lr=args.lr,
         device=args.device,
         verbose=args.verbose,

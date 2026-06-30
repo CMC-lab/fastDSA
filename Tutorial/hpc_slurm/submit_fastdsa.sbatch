@@ -24,7 +24,6 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
 METHOD="${METHOD:-kw}"
 DEVICE="${DEVICE:-cuda}"
 ITERS="${ITERS:-200}"
-SELECTION_ITERS="${SELECTION_ITERS:-50}"
 INPUT_SHAPE="${INPUT_SHAPE:-time_features}"
 PLOT_HEATMAP="${PLOT_HEATMAP:-1}"
 PLOT_MDS="${PLOT_MDS:-1}"
@@ -35,7 +34,6 @@ ARGS=(
   --method "${METHOD}"
   --device "${DEVICE}"
   --iters "${ITERS}"
-  --selection-iters "${SELECTION_ITERS}"
   --input-shape "${INPUT_SHAPE}"
 )
 
